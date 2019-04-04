@@ -4,6 +4,7 @@
 % TODO: Spawn on several nodes
 
 input_neurone(Out, J, Wave) ->
+	% io:format("Input neurone ~p~n", [J]),
 	receive
 	
 	{backward, interruption, _}=Int ->
@@ -61,6 +62,7 @@ hidden_neurone_init(Out, J) ->
 	end.
 
 hidden_neurone(Data) ->
+	% io:format("Hidden neurone ~p~n", [Data#hidden_data.j]),
 	Size_In = array:size(Data#hidden_data.in),
 	Size_Out = array:size(Data#hidden_data.out),
 	Wave_In = Data#hidden_data.wave_in,
@@ -217,7 +219,7 @@ hidden_neurone(Data) ->
 	% 	array:get(K, Data#hidden_data.out) ! M,
 	% 	hidden_neurone(Data)
 
-	after 100 ->
+	after 1000000 ->
 
 		if Size_In > Data#hidden_data.missing_in ->
 			array:map(fun(K, V) ->

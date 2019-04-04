@@ -88,8 +88,9 @@ launch(L) -> spawn(monitor, main, [L]).
 % c(monitor).
 % c(utils).
 % T = utils:read_csv("training_set.csv"), ok.
-% M = monitor:launch([7, 5, 1]).
+% M = monitor:launch([7, 10, 10, 1]).
+% M ! {feedforward, array:from_list([1, -1, 0.5, 2, -2, 0.5, 1]), self()}.
 % M ! {test, T, self()}, ok.
-% M ! {backprop, T, 4, self()}, ok.
+% M ! {backprop, T, 1, self()}, ok.
 % M ! {test, T, self()}, ok.
 % flush().
