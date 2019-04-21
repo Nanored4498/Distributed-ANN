@@ -54,21 +54,12 @@ backprop_algo({Input, _}=N, TrainS, T) ->
 	backprop_algo(N, TrainS, T-1).
 
 feedforward_algo({Input, _}, In, Fun) ->
-	array:map(fun(J, N_J) ->
-		if J == 0 -> N_J ! {forward, array:get(J, In), self()};
-		true -> N_J ! {forward, array:get(J, In)}
-		end end,
-		Input),
-	wait_wave(Fun).
-wait_wave(Fun) ->
+	array:map(fun(J, N_J) -> N_J ! {forward, array:get(J, In)} end,	Input),
+	wait_res(Fun).
+wait_res(Fun) ->
 	receive
-		{wave_f, Wf} ->	wait_res(Wf, Fun);
-		M -> self() ! M, wait_wave(Fun)
-	end.
-wait_res(Wf, Fun) ->
-	receive
-		{forward, Y, 0, Wf} -> Fun(Y);
-		M -> self() ! M, wait_res(Wf, Fun)
+		{forward, Y, 0} -> Fun(Y);
+		M -> self() ! M, wait_res(Fun)
 	end.
 
 feedbackward_algo({_, Output}, Y) ->
