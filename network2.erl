@@ -7,36 +7,45 @@
 		test_main/0]).
 
 %%%% Time before resending a message %%%%
-dt() -> 500000000.
+dt() -> 100000000.
 
 test() ->
 	spawn(network2, test_main, []),
 	ok.
+
+learn(I, O) ->
+	I ! {forward, array:from_list([0.5, 0.4])},
+	receive {forward, Y2} -> io:format("res = ~w~n", [Y2]) end,
+	O ! {backward, 1},
+	receive {backward, Y3} -> io:format("res = ~w~n", [Y3]) end.
 
 test_main() ->
 	timer:sleep(100),
 	{I, O} = neural_network([2, 3, 1], self()),
 	I ! {forward, array:from_list([0.2, 0.8])},
 	receive {forward, Y} -> io:format("res = ~w~n", [Y]) end,
-	I ! {forward, array:from_list([0.5, 0.4])},
-	receive {forward, Y2} -> io:format("res = ~w~n", [Y2]) end,
-	O ! {backward, 1},
-	receive {backward, Y3} -> io:format("res = ~w~n", [Y3]) end,
-	I ! {forward, array:from_list([0.5, 0.4])},
-	receive {forward, Y4} -> io:format("res = ~w~n", [Y4]) end,
-	O ! {backward, 1},
-	receive {backward, Y5} -> io:format("res = ~w~n", [Y5]) end,
+	learn(I, O),
+	learn(I, O),
+	learn(I, O),
+	learn(I, O),
+	learn(I, O),
+	learn(I, O),
+	learn(I, O),
+	learn(I, O),
+	learn(I, O),
+	learn(I, O),
 	I ! {forward, array:from_list([0.5, 0.4])},
 	receive {forward, Y6} -> io:format("res = ~w~n", [Y6]) end,
 	done.
 
 send(To, Msg) ->
 	R = rand:uniform(),
-	if R < 0.92 ->
-		io:format("    ~w -> ~w: ~w~n", [self(), To, Msg]),
+	if R < 0.6 ->
+		%io:format("    ~w -> ~w: ~w~n", [self(), To, Msg]),
 		To ! Msg;
 	true -> 
-		io:format("    ~w -> ~w: ~w <<fail>>~n", [self(), To, Msg])
+		%io:format("    ~w -> ~w: ~w <<fail>>~n", [self(), To, Msg]),
+		ok
 	end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -125,11 +134,14 @@ add_backward(Data, I, D_I, First, Last, Bit) ->
 rcv_value(Data, Com, I, Val, Dir, Bit_rcv) ->
 	Bit = Com#com.bit,
 	%%% Send Ack %%%
-	if Dir == forward ->
-		%io:format("[~w] ~w / ~w -> ~w~n", [self(), I, array:size(Data#hd.in), Val]),
-		send(array:get(I, Data#hd.in), {forward, ack, Data#hd.j, Bit_rcv});
+	if (Bit_rcv == Bit); (Com#com.miss_send == 0) ->
+		if Dir == forward ->
+			send(array:get(I, Data#hd.in), {forward, ack, Data#hd.j, Bit_rcv});
+		true ->
+			send(array:get(I, Data#hd.out), {backward, ack, Data#hd.j, Bit_rcv})
+		end;
 	true ->
-		send(array:get(I, Data#hd.out), {backward, ack, Data#hd.j, Bit_rcv})
+		this_is_a_message_of_a_new_wave_while_we_have_not_sent_our_message_to_all_neurones_of_next_layer
 	end,
 	%%%%%%%%%%%%%%%%
 	Rcv_I = array:get(I, Com#com.rcv),
@@ -313,7 +325,7 @@ input_neurone(Data0) ->
 					timeout = os:system_time()
 				});
 			true ->
-				send(self(), Msg),
+				self() ! Msg,
 				input_neurone(Data)
 			end;
 
@@ -460,7 +472,7 @@ output_neurone(Data0) ->
 				New_bit = (Bit_for + 1) rem 2,
 				Miss2 = Data#on.miss_for - 1,
 				Ack2 = array:set(K, New_bit, Data#on.ack_for),
-				io:format("[~w] monitor ~w~n", [self(), Miss2]),
+				%io:format("[~w] monitor ~w~n", [self(), Miss2]),
 				if Miss2 == 0 ->
 					A3 = utils:sigmoid(A2),
 					Data#on.monitor ! {forward, A3},
