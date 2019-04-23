@@ -6,7 +6,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%
 
 test() ->
-	T = utils:read_csv("training_set.csv"),
+	T = utils:read_csv("../data/training_set.csv"),
 	M = monitor:launch([7, 5, 1]),
 	M ! {feedforward, array:from_list([1, -1, 0.5, 2, -2, 0.5, 1]), self()},
 	receive X -> io:format("~w~n", [X]) end,
@@ -39,16 +39,19 @@ main2({I, O}=N, SI) ->
 			receive {forward, Res} -> Pid ! {self(), feedforward, Res} end;
 		true ->
 			Pid ! {self(), err, "Bad input size"}
-		end;
+		end,
+		main2(N, SI);
 
 	{feedbackward, Y, Pid} ->
 		O ! {backward, Y},
-		receive {backward, Res} -> Pid ! {self(), feedbackward, Res} end;
+		receive {backward, Res} -> Pid ! {self(), feedbackward, Res} end,
+		main2(N, SI);
 
 	{backprop, TrainS, T, Pid} ->
 		TrainS2 = get_valid_examples(TrainS, SI),
 		backprop_algo(I, O, TrainS2, T, SI),
-		Pid ! {self(), backprop_done};
+		Pid ! {self(), backprop_done},
+		main2(N, SI);
 
 	{test, TestS, Pid} ->
 		TestS2 = get_valid_examples(TestS, SI),
@@ -58,10 +61,14 @@ main2({I, O}=N, SI) ->
 					Y = array:get(SI, X),
 					receive {forward, A} -> math:pow(A - Y, 2) end
 					end, TestS),
-		Mean = array:foldl(fun(_, X, Sum) -> X+Sum end, 0, Errors) / ST / 2,
-		Pid ! {self(), test, Mean}
+		Mean = lists:sum(array:to_list(Errors)) / ST / 2,
+		Pid ! {self(), test, Mean},
+		main2(N, SI);
 
-	end, main2(N, SI).
+	shutdown ->
+		I ! shutdown
+
+	end.
 
 get_valid_examples(Set, SI) ->
 	array:from_list(

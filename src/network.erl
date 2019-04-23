@@ -12,7 +12,7 @@
 %%%% Time before resending a message %%%%
 dt() -> 50000000.
 %%%% Learning rate %%%%
-learning_rate() -> 0.1.
+learning_rate() -> 0.6.
 %%%% Verbose mode %%%%
 verbose() -> false.
 %%%% Probability of failure when sending a message %%%%
@@ -290,7 +290,16 @@ hidden_neurone(Data, For0, Back0) ->
 		%%%%%%%% INTERUPT BACKWARD %%%%%%%%
 		{backward, interruption, Pass} ->
 			Back2 = interrupt(Data, Back, backward, Pass),
-			hidden_neurone(Data, For, Back2)
+			hidden_neurone(Data, For, Back2);
+
+		%%%%%%%% SHUTDOWN %%%%%%%%
+		shutdown ->
+			if Data#hd.j == 0 ->
+				array:map(fun(_I, N_I) -> N_I ! shutdown end, Data#hd.out);
+			true -> ok end,
+			V = verbose(),
+			if V -> io:format("[~w] Shutdown !~n", [self()]);
+			true -> ok end
 
 	after
 		DT div 1000000 -> hidden_neurone(Data, For, Back)
@@ -409,7 +418,13 @@ input_neurone(Data0) ->
 				bit_back = 0,
 				ack_back = array:new(Size, {default,0}),
 				miss_back = Size
-			})
+			});
+
+		shutdown ->
+			array:map(fun(_I, N_I) -> N_I ! shutdown end, Data#in.layer),
+			V = verbose(),
+			if V -> io:format("[~w] Shutdown !~n", [self()]);
+			true -> ok end
 
 	after DT div 1000000 -> input_neurone(Data)
 	end.
@@ -538,7 +553,12 @@ output_neurone(Data0) ->
 				bit_for = 0,
 				ack_for = array:new(Size, {default,0}),
 				miss_for = Size
-			})
+			});
+
+		shutdown ->
+			V = verbose(),
+			if V -> io:format("[~w] Shutdown !~n", [self()]);
+			true -> ok end
 
 	after DT div 1000000 -> output_neurone(Data)
 	end.

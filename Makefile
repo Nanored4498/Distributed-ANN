@@ -1,11 +1,14 @@
 all:
-	erl -make
+	cd src; erl -make
 
 monitor: all
-	erl -noshell -s monitor test -s init stop
+	cd src; erl -noshell -s monitor test -s init stop
 
 network: all
-	erl -noshell -s network test -s init stop
+	cd src; erl -noshell -s network test -s init stop
+
+testing: all
+	cd src; erl -noshell -s testing main -s init stop
 
 clean:
 	rm *.beam
