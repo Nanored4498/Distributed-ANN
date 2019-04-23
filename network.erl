@@ -108,7 +108,7 @@ hidden_neurone(Data) ->
 					in_vals=In_Vals2,
 					missing_in=Missing2,
 					sum_in=Sum2,
-					timeout_in_rcv = os:system_time()
+					timeout_in = os:system_time()
 				})
 			end;
 		true ->
