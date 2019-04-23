@@ -23,10 +23,8 @@ test_main() ->
 	timer:sleep(100),
 	{I, O} = neural_network([2, 3, 1], self()),
 	I ! {forward, array:from_list([0.2, 0.8])},
+	O ! {forward, interruption},
 	receive {forward, Y} -> io:format("res = ~w~n", [Y]) end,
-	learn(I, O),
-	learn(I, O),
-	learn(I, O),
 	learn(I, O),
 	learn(I, O),
 	learn(I, O),
@@ -36,11 +34,16 @@ test_main() ->
 	learn(I, O),
 	I ! {forward, array:from_list([0.5, 0.4])},
 	receive {forward, Y6} -> io:format("res = ~w~n", [Y6]) end,
+	O ! {backward, 1},
+	I ! {backward, interruption},
+	receive {backward, Y3} -> io:format("res = ~w~n", [Y3]) end,
+	io:format("FINISH !!!!!~n"),
 	done.
 
 send(To, Msg) ->
+	Err_Prob = 0.96,
 	R = rand:uniform(),
-	if R < 0.6 ->
+	if (R < Err_Prob); (element(2, Msg) == interruption)->
 		%io:format("    ~w -> ~w: ~w~n", [self(), To, Msg]),
 		To ! Msg;
 	true -> 
@@ -54,7 +57,8 @@ send(To, Msg) ->
 
 % Data structure for neurones
 -record(com, {
-	rcv, send, miss_rcv, miss_send=0, timeout=0, bit=0
+	rcv, send, miss_rcv, miss_send=0, timeout=0, bit=0,
+	interrupted=false
 }).
 -record(hd, {
 	w, b, in, out, j, a=0, d=0, input_layer
@@ -132,67 +136,78 @@ add_backward(Data, I, D_I, First, Last, Bit) ->
 	end.
 
 rcv_value(Data, Com, I, Val, Dir, Bit_rcv) ->
-	Bit = Com#com.bit,
-	%%% Send Ack %%%
-	if (Bit_rcv == Bit); (Com#com.miss_send == 0) ->
-		if Dir == forward ->
-			send(array:get(I, Data#hd.in), {forward, ack, Data#hd.j, Bit_rcv});
-		true ->
-			send(array:get(I, Data#hd.out), {backward, ack, Data#hd.j, Bit_rcv})
-		end;
+	if Com#com.interrupted ->
+		{Data, Com};
 	true ->
-		this_is_a_message_of_a_new_wave_while_we_have_not_sent_our_message_to_all_neurones_of_next_layer
-	end,
-	%%%%%%%%%%%%%%%%
-	Rcv_I = array:get(I, Com#com.rcv),
-	if (Rcv_I == Bit), (Bit == Bit_rcv) ->
-		New_bit = (Bit + 1) rem 2,
-		Rcv2 = array:set(I, New_bit, Com#com.rcv),
-		Size_Rcv = array:size(Com#com.rcv),
-		Missing2 = Com#com.miss_rcv - 1,
-		First = Com#com.miss_rcv == Size_Rcv,
-		Last = Missing2 == 0,
-		Data2 = if Dir == forward -> add_forward(Data, I, Val, First, Last, Bit);
-				true -> add_backward(Data, I, Val, First, Last, Bit) end,
-		%%% Executed when all inputs have been received %%%
-		if Last ->
-			%io:format("[~w] miss_send ~w~n", [self(), array:size(Com#com.send)]),
-			{Data2, Com#com{
-				rcv = Rcv2,
-				miss_rcv = Missing2,
-				miss_send = array:size(Com#com.send),
-				timeout = os:system_time()
-			}};
-		%%% Executed when some inputs haven't been received yet %%%
+		Bit = Com#com.bit,
+		%%% Send Ack %%%
+		if (Bit_rcv == Bit); (Com#com.miss_send == 0) ->
+			if Dir == forward ->
+				send(array:get(I, Data#hd.in), {forward, ack, Data#hd.j, Bit_rcv});
+			true ->
+				send(array:get(I, Data#hd.out), {backward, ack, Data#hd.j, Bit_rcv})
+			end;
 		true ->
-			{Data2, Com#com{
-				rcv = Rcv2,
-				miss_rcv = Missing2
-			}}
-		end;
-	true ->
-		{Data, Com}
+			this_is_a_message_of_a_new_wave_while_we_have_not_sent_our_message_to_all_neurones_of_next_layer
+		end,
+		%%%%%%%%%%%%%%%%
+		Rcv_I = array:get(I, Com#com.rcv),
+		if (Rcv_I == Bit), (Bit == Bit_rcv) ->
+			New_bit = (Bit + 1) rem 2,
+			Rcv2 = array:set(I, New_bit, Com#com.rcv),
+			Size_Rcv = array:size(Com#com.rcv),
+			Missing2 = Com#com.miss_rcv - 1,
+			First = Com#com.miss_rcv == Size_Rcv,
+			Last = Missing2 == 0,
+			Data2 = if Dir == forward -> add_forward(Data, I, Val, First, Last, Bit);
+					true -> add_backward(Data, I, Val, First, Last, Bit) end,
+			%%% Executed when all inputs have been received %%%
+			if Last ->
+				%io:format("[~w] miss_send ~w~n", [self(), array:size(Com#com.send)]),
+				{Data2, Com#com{
+					rcv = Rcv2,
+					miss_rcv = Missing2,
+					miss_send = array:size(Com#com.send),
+					timeout = os:system_time()
+				}};
+			%%% Executed when some inputs haven't been received yet %%%
+			true ->
+				{Data2, Com#com{
+					rcv = Rcv2,
+					miss_rcv = Missing2
+				}}
+			end;
+		true ->
+			{Data, Com}
+		end
 	end.
 
-interrupt(Data, Com, Dir) ->
+interrupt(Data, Com, Dir, Pass) ->
 	if Data#hd.j == 0 ->
 		if Dir == forward ->
-			array:map(fun(_K, N) -> send(N, {forward, interruption}) end, Data#hd.in);
+			array:map(fun(_K, N) -> send(N, {forward, interruption, Pass}) end,
+				if Pass == 1 -> Data#hd.in; true -> Data#hd.out end);
 		true ->
-			array:map(fun(_K, N) -> send(N, {backward, interruption}) end, Data#hd.out)
+			array:map(fun(_K, N) -> send(N, {backward, interruption, Pass}) end,
+				if Pass == 1 -> Data#hd.out; true -> Data#hd.in end)
 		end;
 	true ->
 		ok
 	end,
-	Size_Rcv = array:size(Com#com.rcv),
-	Size_Send = array:size(Com#com.send),
-	Com#com{
-		rcv = array:new(Size_Rcv, {default,0}),
-		send = array:new(Size_Send, {default,0}),
-		miss_rcv = Size_Rcv,
-		miss_send = 0,
-		bit=0
-	}.
+	if Pass == 1 ->
+		Com#com{interrupted=true};
+	true ->
+		Size_Rcv = array:size(Com#com.rcv),
+		Size_Send = array:size(Com#com.send),
+		Com#com{
+			rcv = array:new(Size_Rcv, {default,0}),
+			send = array:new(Size_Send, {default,0}),
+			miss_rcv = Size_Rcv,
+			miss_send = 0,
+			bit=0,
+			interrupted=false
+		}
+	end.
 
 resend_forward(Data, Com, I) ->
 	WA = array:get(I, Data#hd.w) * Data#hd.a,
@@ -243,8 +258,8 @@ hidden_neurone(Data, For0, Back0) ->
 			hidden_neurone(Data2, For2, Back);
 
 		%%%%%%%% INTERUPT FORWARD %%%%%%%%
-		{forward, interruption} ->
-			For2 = interrupt(Data, For, forward),
+		{forward, interruption, Pass} ->
+			For2 = interrupt(Data, For, forward, Pass),
 			hidden_neurone(Data, For2, Back);
 
 		%%%%%%%% ACK BACKWARD %%%%%%%%
@@ -258,8 +273,8 @@ hidden_neurone(Data, For0, Back0) ->
 			hidden_neurone(Data2, For, Back2);
 
 		%%%%%%%% INTERUPT BACKWARD %%%%%%%%
-		{backward, interruption} ->
-			Back2 = interrupt(Data, Back, backward),
+		{backward, interruption, Pass} ->
+			Back2 = interrupt(Data, Back, backward, Pass),
 			hidden_neurone(Data, For, Back2)
 
 	after
@@ -306,8 +321,8 @@ input_neurone(Data0) ->
 
 	receive
 
-		{forward, interruption}=Int ->
-			Data#in.monitor ! Int,
+		{forward, interruption, 1} ->
+			array:map(fun(_I, N_I) -> send(N_I, {forward, interruption, 2}) end, Data#in.layer),
 			input_neurone(Data#in{
 				bit = 0,
 				ack = array:new(array:size(Data#in.layer), {default,0}),
@@ -368,8 +383,12 @@ input_neurone(Data0) ->
 				input_neurone(Data)
 			end;
 
-		{backward, interruption}=Int ->
-			array:map(fun(_I, N) -> send(N, Int) end, Data#in.layer),
+		{backward, interruption} ->
+			array:map(fun(_I, N_I) -> send(N_I, {backward, interruption, 1}) end, Data#in.layer),
+			input_neurone(Data#in{miss_back=-1});
+		
+		{backward, interruption, 2} ->
+			Data#in.monitor ! {backward, interruption},
 			Size = array:size(Data#in.layer),
 			input_neurone(Data#in{
 				bit_back = 0,
@@ -422,8 +441,8 @@ output_neurone(Data0) ->
 
 	receive
 
-		{backward, interruption}=Int ->
-			Data#on.monitor ! Int,
+		{backward, interruption, 1} ->
+			array:map(fun(_K, N_K) -> send(N_K, {backward, interruption, 2}) end, Data#on.layer),
 			output_neurone(Data#on{
 				bit = 0,
 				ack = array:new(array:size(Data#on.layer), {default,0}),
@@ -443,7 +462,7 @@ output_neurone(Data0) ->
 					timeout = os:system_time()
 				});
 			true ->
-				send(self(), Msg),
+				self() ! Msg,
 				output_neurone(Data)
 			end;
 
@@ -493,8 +512,12 @@ output_neurone(Data0) ->
 				output_neurone(Data)
 			end;
 
-		{forward, interruption}=Int ->
-			array:map(fun(_K, N_K) -> send(N_K, Int) end, Data#on.layer),
+		{forward, interruption} ->
+			array:map(fun(_K, N_K) -> send(N_K, {forward, interruption, 1}) end, Data#on.layer),
+			output_neurone(Data#on{miss_for=-1});
+
+		{forward, interruption, 2} ->
+			Data#on.monitor ! {forward, interruption},
 			Size = array:size(Data#on.layer),
 			output_neurone(Data#on{
 				bit_for = 0,
