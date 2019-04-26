@@ -10,7 +10,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%%% Time before resending a message %%%%
-dt() -> 50000000.
+dt() -> 20000000. %%%% 20ms
 %%%% Learning rate %%%%
 learning_rate() -> 0.6.
 %%%% Verbose mode %%%%
@@ -19,8 +19,10 @@ verbose() -> false.
 err_prob() -> 0.0.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%% TESTING FUNCTION %%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+%%% we want that the network outputs 1 on input (0.5, 0.4) %%%
 learn(I, O) ->
 	I ! {forward, array:from_list([0.5, 0.4])},
 	receive {forward, Y2} -> io:format("res = ~w~n", [Y2]) end,
@@ -29,10 +31,11 @@ learn(I, O) ->
 
 test() ->
 	timer:sleep(100),
+	T0 = os:system_time(),
 	{I, O} = neural_network([2, 3, 1], self()),
 	I ! {forward, array:from_list([0.2, 0.8])},
 	O ! {forward, interruption},
-	receive {forward, Y} -> io:format("res = ~w~n", [Y]) end,
+	receive {forward, Y} -> io:format("res = ~w~n", [Y]) end, % Should be interruption as we sent an interruption
 	learn(I, O),
 	learn(I, O),
 	learn(I, O),
@@ -44,7 +47,9 @@ test() ->
 	receive {forward, Y6} -> io:format("res = ~w~n", [Y6]) end,
 	O ! {backward, 1},
 	I ! {backward, interruption},
-	receive {backward, Y3} -> io:format("res = ~w~n", [Y3]) end,
+	receive {backward, Y3} -> io:format("res = ~w~n", [Y3]) end, % Should be interruption as we sent an interruption
+	T1 = os:system_time(),
+	io:format("Time: ~w µs~n", [(T1 - T0) div 1000]),
 	io:format("FINISH !!!!!~n"),
 	done.
 
@@ -83,7 +88,7 @@ hidden_neurone_init(Out, J, Input_Layer) ->
 	receive In ->
 		Size_In = array:size(In),
 		W = array:map(fun(_I, _X) -> rand:normal() end, array:new(Size_Out)),
-		B = rand:normal(),
+		B = if Input_Layer -> 0; true -> rand:normal() end,
 		Ain = array:new(Size_In, {default,0}),
 		Aout = array:new(Size_Out, {default,0}),
 		Data = #hd{w=W, b=B, in=In, out=Out, j=J, input_layer=Input_Layer},

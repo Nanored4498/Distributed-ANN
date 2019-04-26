@@ -1,0 +1,117 @@
+\documentclass[12pt]{article}
+
+\usepackage[french]{babel}
+\usepackage[utf8]{inputenc}  
+\usepackage[T1]{fontenc}
+\usepackage[left=2.5cm,right=2.5cm,top=3cm,bottom=2.65cm]{geometry}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{tikz}
+
+\graphicspath{{ims/}}
+
+\title{
+	Distributed Systems\\
+	\textbf{Building a distributed neural network}\\
+	Report
+}
+\author{
+	Yoann Coudert-\,-Osmont
+}
+
+\begin{document}
+	
+\maketitle
+
+\section{Introduction}
+
+In this project a neural network for distributed system has been implemented. We use an architecture with fully connected layers. Each neuron of the network is a single process which communicate with its in-neurons and out-neurons. The user can spawn a monitor which will create the network an manage it.
+
+\paragraph{How to use the code}
+The source code is in the folder \verb|src|. There are two files which were given to us at the beginning of the project (\verb|dataframe.erl| and \verb|utils.erl|) to make easier the use of 2d arrays and to read CSV files.
+\begin{itemize}
+	\item The file \verb|network.erl| contains functions executed by neurons and a function to spawn a network.
+	\item The file \verb|monitor.erl| contains the code of the monitor.
+	\item The file \verb|testing.erl| allows to test the efficiency of different architectures of neural networks.
+\end{itemize}
+The folder \verb|testing| contains some Python script to plot some graphics which are in this report. The folder \verb|data| contains two data-sets in CSV format. \\
+To execute the code you can use:
+\begin{itemize}
+	\item \verb|make network| to test feed-forward, feed-backward and interruption of these scenarios. More precisely it tests the interruption of a feed-forward scenario at the begging. Next it try to make the network output 1 on the input (0.5, 0.4). It print at each step two lines with \verb|res = done| for the feed-backward scenario and \verb|res = <a float>| for the result of the feed-forward scenario. At the end it tries to interrupt a feed-backward scenario.
+	\item \verb|make monitor| to test the monitor which tests backpropagation algorithm on the data-set in the file \verb|training_set.csv|.
+	\item \verb=make testing | python3 testing/stats.py= to plot some graphs about the efficiency of different neural network architectures.
+\end{itemize}
+
+\section{Network deployment}
+
+I spawn all neurons on the same node. I didn't implemented a way to spawn layers on different nodes. The function that spawn a network is \verb|network:neural_network/2|. the first parameter is a list of the sizes of each layer. The second is the PID of the monitor with which output and input neurons will communicate. I use a trick which consist in spawning a new input neurons before the true layer of inputs neurons. This new neurons will have a list of values to feed to the true input layer in feed-forward scenario.
+
+\begin{figure}[h]
+	\centering
+	\begin{tikzpicture}[every node/.style={minimum size=0.75cm}]
+		\node[fill=blue, draw, circle, opacity=0.5] (a) at (0, 0) {};
+		
+		\node[fill=green, draw, circle, opacity=0.5] (b) at (2.5, -1.4) {};
+		\node[fill=green, draw, circle, opacity=0.5] (c) at (2.5, 0) {};
+		\node[fill=green, draw, circle, opacity=0.5] (d) at (2.5, 1.4) {};
+		
+		\node[fill=gray, draw, circle, opacity=0.5] (e) at (5, -0.7) {};
+		\node[fill=gray, draw, circle, opacity=0.5] (f) at (5, 0.7) {};
+		
+		\node[fill=gray, draw, circle, opacity=0.5] (g) at (7.5, -0.7) {};
+		\node[fill=gray, draw, circle, opacity=0.5] (h) at (7.5, 0.7) {};
+		
+		\node[fill=red, draw, circle, opacity=0.5] (i) at (10, 0) {};
+		
+		\node[fill=black, draw, circle, opacity=0.5] (j) at (5, 3) {};
+		\draw[<->] (a) edge[bend left] (j);
+		\draw[<->] (i) edge[bend right] (j);
+		
+		\node at (6.25, -1.8) {\small Hidden layers};
+		\node at (2.5, -2.4) {\small Input layer};
+		\node at (-0.3, -1) {\small Input neuron};
+		\node at (10.3, -1) {\small Output neuron};
+		\node at (5, 3.75) {\small Monitor};
+		
+		\draw[<->] (a) -- (b);
+		\draw[<->] (a) -- (c);
+		\draw[<->] (a) -- (d);
+		
+		\draw[<->] (b) -- (e);
+		\draw[<->] (b) -- (f);
+		\draw[<->] (c) -- (e);
+		\draw[<->] (c) -- (f);
+		\draw[<->] (d) -- (e);
+		\draw[<->] (d) -- (f);
+		
+		\draw[<->] (e) -- (g);
+		\draw[<->] (e) -- (h);
+		\draw[<->] (f) -- (g);
+		\draw[<->] (f) -- (h);
+		
+		\draw[<->] (g) -- (i);
+		\draw[<->] (h) -- (i);
+	\end{tikzpicture}
+	\captionsetup{justification=centering}
+	\caption{All processes spawned and links between them. The first argument of
+		\texttt{network:neural\_network/2} was \texttt{[3, 2, 2, 1]}. }
+\end{figure}
+
+Layers are spawn one after the other starting from the layer of the output neuron. Neurons are spawn with their out-layer in parameter then they are waiting for a message containing their in-layer. When the in-layer is spawned we send it.
+
+I have three different functions for the neuron. A function for hidden neurons and for the neurons of the true input layer, a function for the input neuron and a function for the output neuron.
+
+\section{Feed-forward scenario}
+
+\paragraph{Weights and Bias}
+As proposed weights and bias are initialized with random values $\sim \mathcal{N}(0, 1)$. I created a record \verb|hd| that contains data of hidden neurons (When I say hidden neuron, I include neurons of the input layer. I only distinguish the input neuron and the output neuron from other neurons). In this record I store the weights of connections toward the out-layer (i.e. the values $w_{ij}^{l+1}$ for the neuron $j$ of the layer $l$ if use the notations of the subject). I preferred store these weights instead of weights of the connections with in-layer $w_{jk}^l$ as proposed in the subject because it allow us to avoid the need to store the values of in-neuron to update weights during the feed-backward scenario. In fact we have:
+$$ w_{ij}^{l+1} \gets w_{ij}^{l+1} - \eta a_j^l \delta_i^{l+1} $$
+Then the $j$-th neuron of the $l$-th layer has to send weighted values during feed-forward scenario (i.e. it sends $w_{ij}^{l+1} a_j^l$ to the $i$-th neuron of the $(l+1)$-th layer). I also store the bias $b_j^l$ in \verb|hd|. As neurons of the input layer should not have a bias, the record also have a value \verb|input_layer| which is \verb|true| if and only if the neuron is a neuron of the input layer. When this value is \verb|true|, the bias $b$ is forced to be 0.
+
+\paragraph{Communications}
+I created another record for communications. A hidden neuron 
+
+\end{document}
