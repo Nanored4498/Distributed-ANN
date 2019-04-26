@@ -1,7 +1,7 @@
 -module(network).
--export([hidden_neurone_init/3,
-		input_neurone_init/2,
-		output_neurone_init/1,
+-export([hidden_neuron_init/3,
+		input_neuron_init/2,
+		output_neuron_init/1,
 		neural_network/2, 
 		test/0]).
 
@@ -71,19 +71,31 @@ send(To, Msg) ->
 	end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%% HIDDEN NEURONE %%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%% HIDDEN neuron %%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% Data structure for neurones
+% Data structure for neurons
 -record(com, {
-	rcv, send, miss_rcv, miss_send=0, timeout=0, bit=0,
-	interrupted=false
+	rcv,				% An array which store a bit for all neuron from which we will receive messages
+	send,				% An array which store a bit for all neuron to which we will send messages
+	miss_rcv,			% The number of messages that we need to receive
+	miss_send=0,		% The number of ack that we need to receive
+	timeout=0,			% The time in nano seconds of the last message sent
+	bit=0,				% The bit that represent the state of the communication
+	interrupted=false	% If true ignore received messages
 }).
 -record(hd, {
-	w, b, in, out, j, a=0, d=0, input_layer
+	w,				% w[i] is w_{ij}^{l+1} the weight of the connection with the i-th neuron of the out-layer
+	b,				% bias
+	in,				% in[k] is the PID of the k-th neuron of the in-layer
+	out,			% out[i] is the PID of the i-th neuron of the out-layer
+	j,				% indice of the neuron in its layer
+	a=0,			% activation of the neuron
+	d=0,			% error of the neuron
+	input_layer		% true iff the neuron is in the input layer
 }).
 
-hidden_neurone_init(Out, J, Input_Layer) ->
+hidden_neuron_init(Out, J, Input_Layer) ->
 	Size_Out = array:size(Out),
 	receive In ->
 		Size_In = array:size(In),
@@ -94,7 +106,7 @@ hidden_neurone_init(Out, J, Input_Layer) ->
 		Data = #hd{w=W, b=B, in=In, out=Out, j=J, input_layer=Input_Layer},
 		For = #com{rcv=Ain, send=Aout, miss_rcv=Size_In},
 		Back = #com{rcv=Aout, send=Ain, miss_rcv=Size_Out},
-		hidden_neurone(Data, For, Back)
+		hidden_neuron(Data, For, Back)
 	end.
 
 rcv_ack(Com, I) ->
@@ -168,7 +180,7 @@ rcv_value(Data, Com, I, Val, Dir, Bit_rcv) ->
 				send(array:get(I, Data#hd.out), {backward, ack, Data#hd.j, Bit_rcv})
 			end;
 		true ->
-			this_is_a_message_of_a_new_wave_while_we_have_not_sent_our_message_to_all_neurones_of_next_layer
+			this_is_a_message_of_a_new_wave_while_we_have_not_sent_our_message_to_all_neurons_of_next_layer
 		end,
 		%%%%%%%%%%%%%%%%
 		Rcv_I = array:get(I, Com#com.rcv),
@@ -253,7 +265,7 @@ time_com(Data, Com, Time, DT, Dir) -> Com#com{
 		end
 	}.
 
-hidden_neurone(Data, For0, Back0) ->
+hidden_neuron(Data, For0, Back0) ->
 	Bit_for = For0#com.bit,
 	Bit_back = Back0#com.bit,
 	DT = dt(),
@@ -269,33 +281,33 @@ hidden_neurone(Data, For0, Back0) ->
 		{forward, ack, I, Bit_for} ->
 			%io:format("[~w] miss_send3 ~w~n", [self(), For#com.miss_send]),
 			For2 = rcv_ack(For, I),
-			hidden_neurone(Data, For2, Back);
+			hidden_neuron(Data, For2, Back);
 
 		%%%%%%%% VALUE FORWARD %%%%%%%%
 		{forward, WA_K, K, Bit_rcv} when WA_K /= ack ->
 			{Data2, For2} = rcv_value(Data, For, K, WA_K, forward, Bit_rcv),
 			%io:format("[~w] miss_send2 ~w~n", [self(), For2#com.miss_send]),
-			hidden_neurone(Data2, For2, Back);
+			hidden_neuron(Data2, For2, Back);
 
 		%%%%%%%% INTERUPT FORWARD %%%%%%%%
 		{forward, interruption, Pass} ->
 			For2 = interrupt(Data, For, forward, Pass),
-			hidden_neurone(Data, For2, Back);
+			hidden_neuron(Data, For2, Back);
 
 		%%%%%%%% ACK BACKWARD %%%%%%%%
 		{backward, ack, K, Bit_back} ->
 			Back2 = rcv_ack(Back, K),
-			hidden_neurone(Data, For, Back2);
+			hidden_neuron(Data, For, Back2);
 
 		%%%%%%%% VALUE BACKWARD %%%%%%%%
 		{backward, D_I, I, Bit_rcv} when D_I /= ack ->
 			{Data2, Back2} = rcv_value(Data, Back, I, D_I, backward, Bit_rcv),
-			hidden_neurone(Data2, For, Back2);
+			hidden_neuron(Data2, For, Back2);
 
 		%%%%%%%% INTERUPT BACKWARD %%%%%%%%
 		{backward, interruption, Pass} ->
 			Back2 = interrupt(Data, Back, backward, Pass),
-			hidden_neurone(Data, For, Back2);
+			hidden_neuron(Data, For, Back2);
 
 		%%%%%%%% SHUTDOWN %%%%%%%%
 		shutdown ->
@@ -307,11 +319,11 @@ hidden_neurone(Data, For0, Back0) ->
 			true -> ok end
 
 	after
-		DT div 1000000 -> hidden_neurone(Data, For, Back)
+		DT div 1000000 -> hidden_neuron(Data, For, Back)
 	end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%% INPUT NEURONE %%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%% INPUT neuron %%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -record(in, {
@@ -320,16 +332,16 @@ hidden_neurone(Data, For0, Back0) ->
 	ack_back, miss_back, bit_back=0
 }).
 
-input_neurone_init(Monitor, Layer) ->
+input_neuron_init(Monitor, Layer) ->
 	Size = array:size(Layer),
 	Ack = array:new(Size, {default,0}),
 	Data = #in{
 		monitor = Monitor, layer = Layer, values = none,
 		ack = Ack, ack_back = Ack, miss_back = Size
 	},
-	input_neurone(Data).
+	input_neuron(Data).
 
-input_neurone(Data0) ->
+input_neuron(Data0) ->
 	Bit = Data0#in.bit,
 	Bit_back = Data0#in.bit_back,
 	DT = dt(),
@@ -352,7 +364,7 @@ input_neurone(Data0) ->
 
 		{forward, interruption, 1} ->
 			array:map(fun(_I, N_I) -> send(N_I, {forward, interruption, 2}) end, Data#in.layer),
-			input_neurone(Data#in{
+			input_neuron(Data#in{
 				bit = 0,
 				ack = array:new(array:size(Data#in.layer), {default,0}),
 				miss = 0
@@ -363,14 +375,14 @@ input_neurone(Data0) ->
 				array:map(fun(I, V) ->
 					send(array:get(I, Data#in.layer), {forward, V, 0, Bit})
 				end, New_values),
-				input_neurone(Data#in{
+				input_neuron(Data#in{
 					values = New_values,
 					miss = array:size(New_values),
 					timeout = os:system_time()
 				});
 			true ->
 				self() ! Msg,
-				input_neurone(Data)
+				input_neuron(Data)
 			end;
 
 		{forward, ack, I, Bit} ->
@@ -379,13 +391,13 @@ input_neurone(Data0) ->
 				New_bit = (Bit + 1) rem 2,
 				Miss2 = Data#in.miss - 1,
 				Ack2 = array:set(I, New_bit, Data#in.ack),
-				input_neurone(Data#in{
+				input_neuron(Data#in{
 					ack = Ack2,
 					miss = Miss2,
 					bit = if Miss2 == 0 -> New_bit; true -> Bit end
 				});
 			true ->
-				input_neurone(Data)
+				input_neuron(Data)
 			end;
 
 		{backward, _, I, Bit_rcv} ->
@@ -397,29 +409,29 @@ input_neurone(Data0) ->
 				Ack2 = array:set(I, New_bit, Data#in.ack_back),
 				if Miss2 == 0 -> 
 					Data#in.monitor ! {backward, done},
-					input_neurone(Data#in{
+					input_neuron(Data#in{
 						ack_back = Ack2,
 						miss_back = array:size(Data#in.ack_back),
 						bit_back = New_bit
 					});
 				true ->
-					input_neurone(Data#in{
+					input_neuron(Data#in{
 						ack_back = Ack2,
 						miss_back = Miss2
 					})
 				end;
 			true ->
-				input_neurone(Data)
+				input_neuron(Data)
 			end;
 
 		{backward, interruption} ->
 			array:map(fun(_I, N_I) -> send(N_I, {backward, interruption, 1}) end, Data#in.layer),
-			input_neurone(Data#in{miss_back=-1});
+			input_neuron(Data#in{miss_back=-1});
 		
 		{backward, interruption, 2} ->
 			Data#in.monitor ! {backward, interruption},
 			Size = array:size(Data#in.layer),
-			input_neurone(Data#in{
+			input_neuron(Data#in{
 				bit_back = 0,
 				ack_back = array:new(Size, {default,0}),
 				miss_back = Size
@@ -431,11 +443,11 @@ input_neurone(Data0) ->
 			if V -> io:format("[~w] Shutdown !~n", [self()]);
 			true -> ok end
 
-	after DT div 1000000 -> input_neurone(Data)
+	after DT div 1000000 -> input_neuron(Data)
 	end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%% OUTPUT NEURONE %%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%% OUTPUT neuron %%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -record(on, {
@@ -444,7 +456,7 @@ input_neurone(Data0) ->
 	ack_for, miss_for, bit_for=0
 }).
 
-output_neurone_init(Monitor) ->
+output_neuron_init(Monitor) ->
 	receive Layer ->
 		Size = array:size(Layer),
 		Ack = array:new(Size, {default,0}),
@@ -453,10 +465,10 @@ output_neurone_init(Monitor) ->
 			b = rand:normal(),
 			ack = Ack, ack_for = Ack, miss_for = Size
 		},
-		output_neurone(Data)
+		output_neuron(Data)
 	end.
 
-output_neurone(Data0) ->
+output_neuron(Data0) ->
 	Bit = Data0#on.bit,
 	Bit_for = Data0#on.bit_for,
 	DT = dt(),
@@ -478,7 +490,7 @@ output_neurone(Data0) ->
 
 		{backward, interruption, 1} ->
 			array:map(fun(_K, N_K) -> send(N_K, {backward, interruption, 2}) end, Data#on.layer),
-			output_neurone(Data#on{
+			output_neuron(Data#on{
 				bit = 0,
 				ack = array:new(array:size(Data#on.layer), {default,0}),
 				miss = 0
@@ -490,7 +502,7 @@ output_neurone(Data0) ->
 				array:map(fun(_K, N_K) ->
 					send(N_K, {backward, D, 0, Bit})
 				end, Data#on.layer),
-				output_neurone(Data#on{
+				output_neuron(Data#on{
 					d = D,
 					b = Data#on.b - learning_rate()*D,
 					miss = array:size(Data#on.layer),
@@ -498,7 +510,7 @@ output_neurone(Data0) ->
 				});
 			true ->
 				self() ! Msg,
-				output_neurone(Data)
+				output_neuron(Data)
 			end;
 
 		{backward, ack, K, Bit} ->
@@ -507,13 +519,13 @@ output_neurone(Data0) ->
 				New_bit = (Bit + 1) rem 2,
 				Miss2 = Data#on.miss - 1,
 				Ack2 = array:set(K, New_bit, Data#on.ack),
-				output_neurone(Data#on{
+				output_neuron(Data#on{
 					ack = Ack2,
 					miss = Miss2,
 					bit = if Miss2 == 0 -> New_bit; true -> Bit end
 				});
 			true ->
-				output_neurone(Data)
+				output_neuron(Data)
 			end;
 
 		{forward, WA_K, K, Bit_rcv} ->
@@ -530,31 +542,31 @@ output_neurone(Data0) ->
 				if Miss2 == 0 ->
 					A3 = utils:sigmoid(A2),
 					Data#on.monitor ! {forward, A3},
-					output_neurone(Data#on{
+					output_neuron(Data#on{
 						ack_for = Ack2,
 						miss_for = Size,
 						bit_for = New_bit,
 						a = A3
 					});
 				true ->
-					output_neurone(Data#on{
+					output_neuron(Data#on{
 						ack_for = Ack2,
 						miss_for = Miss2,
 						a = A2
 					})
 				end;
 			true ->
-				output_neurone(Data)
+				output_neuron(Data)
 			end;
 
 		{forward, interruption} ->
 			array:map(fun(_K, N_K) -> send(N_K, {forward, interruption, 1}) end, Data#on.layer),
-			output_neurone(Data#on{miss_for=-1});
+			output_neuron(Data#on{miss_for=-1});
 
 		{forward, interruption, 2} ->
 			Data#on.monitor ! {forward, interruption},
 			Size = array:size(Data#on.layer),
-			output_neurone(Data#on{
+			output_neuron(Data#on{
 				bit_for = 0,
 				ack_for = array:new(Size, {default,0}),
 				miss_for = Size
@@ -565,7 +577,7 @@ output_neurone(Data0) ->
 			if V -> io:format("[~w] Shutdown !~n", [self()]);
 			true -> ok end
 
-	after DT div 1000000 -> output_neurone(Data)
+	after DT div 1000000 -> output_neuron(Data)
 	end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -577,7 +589,7 @@ neural_network([], _) ->
 neural_network(L, Monitor) ->
 	[O|HL] = lists:reverse(L),
 	if O == 1, HL /= [] ->
-		Output = spawn(network, output_neurone_init, [Monitor]),
+		Output = spawn(network, output_neuron_init, [Monitor]),
 		Input = neural_network2(HL, array:from_list([Output]), Monitor),
 		{Input, Output};
 	true ->
@@ -585,13 +597,13 @@ neural_network(L, Monitor) ->
 	end.
 
 neural_network2([N], Out, Monitor) ->
-	Layer = array:map(fun(J, _) -> spawn(network, hidden_neurone_init, [Out, J, true]) end, array:new(N)),
+	Layer = array:map(fun(J, _) -> spawn(network, hidden_neuron_init, [Out, J, true]) end, array:new(N)),
 	array:map(fun(_I, Pid) -> Pid ! Layer end, Out),
-	Input = spawn(network, input_neurone_init, [Monitor, Layer]),
+	Input = spawn(network, input_neuron_init, [Monitor, Layer]),
 	In_array = array:from_list([Input]),
 	array:map(fun(_I, Pid) -> Pid ! In_array end, Layer),
 	Input;
 neural_network2([N|L], Out, Monitor) ->
-	Layer = array:map(fun(J, _) -> spawn(network, hidden_neurone_init, [Out, J, false]) end, array:new(N)),
+	Layer = array:map(fun(J, _) -> spawn(network, hidden_neuron_init, [Out, J, false]) end, array:new(N)),
 	array:map(fun(_I, Pid) -> Pid ! Layer end, Out),
 	neural_network2(L, Layer, Monitor).

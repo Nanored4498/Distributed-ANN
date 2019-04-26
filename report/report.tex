@@ -109,9 +109,13 @@ I have three different functions for the neuron. A function for hidden neurons a
 \paragraph{Weights and Bias}
 As proposed weights and bias are initialized with random values $\sim \mathcal{N}(0, 1)$. I created a record \verb|hd| that contains data of hidden neurons (When I say hidden neuron, I include neurons of the input layer. I only distinguish the input neuron and the output neuron from other neurons). In this record I store the weights of connections toward the out-layer (i.e. the values $w_{ij}^{l+1}$ for the neuron $j$ of the layer $l$ if use the notations of the subject). I preferred store these weights instead of weights of the connections with in-layer $w_{jk}^l$ as proposed in the subject because it allow us to avoid the need to store the values of in-neuron to update weights during the feed-backward scenario. In fact we have:
 $$ w_{ij}^{l+1} \gets w_{ij}^{l+1} - \eta a_j^l \delta_i^{l+1} $$
-Then the $j$-th neuron of the $l$-th layer has to send weighted values during feed-forward scenario (i.e. it sends $w_{ij}^{l+1} a_j^l$ to the $i$-th neuron of the $(l+1)$-th layer). I also store the bias $b_j^l$ in \verb|hd|. As neurons of the input layer should not have a bias, the record also have a value \verb|input_layer| which is \verb|true| if and only if the neuron is a neuron of the input layer. When this value is \verb|true|, the bias $b$ is forced to be 0.
+Then the $j$-th neuron of the $l$-th layer has to send weighted values during feed-forward scenario (i.e. it sends $w_{ij}^{l+1} a_j^l$ to the $i$-th neuron of the $(l+1)$-th layer).
+
+I also store the bias $b_j^l$ in \verb|hd|. As neurons of the input layer should not have a bias, the record also have a value \verb|input_layer| which is \verb|true| if and only if the neuron is a neuron of the input layer. When this value is \verb|true|, the bias $b$ is forced to be 0.
+
+Furthermore the output neuron stores its own bias.
 
 \paragraph{Communications}
-I created another record for communications. A hidden neuron 
+I created another record \verb|com| for communications. The three parameters of the hidden neuron function are a record \verb|hd| containing the data of the neuron, and two record \verb|com|, one for the communication of the feed-forward scenario and another for the communication of the feed-backward scenario.
 
 \end{document}
