@@ -107,6 +107,7 @@ I spawn all neurons on the same node. I didn't implemented a way to spawn layers
 	\captionsetup{justification=centering}
 	\caption{All processes spawned and links between them. The first argument of
 		\texttt{network:neural\_network/2} was \texttt{[3, 2, 2, 1]}. }
+	\label{net}
 \end{figure}
 
 Layers are spawn one after the other starting from the layer of the output neuron. Neurons are spawn with their out-layer in parameter then they are waiting for a message containing their in-layer. When the in-layer is spawned we send it.
@@ -138,7 +139,9 @@ Now I will explain how communications works in the case of feed-forward scenario
 \end{itemize}
 The two arrays \verb|rcv| and \verb|send| are initialized with zeros. \verb|bit| is also initialized to zero. Finally the first state of a neuron is waiting for data so \verb|miss_rcv| is initialized to the length of \verb|rcv| (\verb|size(rcv)|) and \verb|miss_send| is initialized to zero.
 
-We can describe the protocol with three labels. Two labels for receiving messages and one label for re-sending messages for which the ack has not been received (\figurename~\ref{proto}).
+We can describe the protocol with three labels. Two labels for receiving messages and one label for re-sending messages for which the ack has not been received (\figurename~\ref{proto}). The pseudo-code is given for feed-forward scenario but it is almost the same for feed-backward scenario expect that we send values to in-neurons, receive values from out-neuron and communicate $\delta_j^l$ instead of $w_{ij}^{l+1} a_j^l$.
+
+\newpage
 
 \begin{figure}[t]
 	\fbox{\parbox{\linewidth}{
@@ -156,7 +159,7 @@ We can describe the protocol with three labels. Two labels for receiving message
 	. \qquad \texttt{if b == bit and rcv[k] == bit:} \\
 	. \qquad \qquad \texttt{miss\_rcv = miss\_rcv - 1} \\
 	. \qquad \qquad \texttt{rcv[k] = (bit + 1) mod 2} \\
-	. \qquad \qquad \texttt{update } $a_j^l$ \texttt{thanks to} $w_{jk}^l a_k^{l-1}$ \\
+	. \qquad \qquad \texttt{update} $a_j^l$ \texttt{thanks to} $w_{jk}^l a_k^{l-1}$ \\
 	. \qquad \qquad \texttt{if miss\_rcv == 0:} \\
 	. \qquad \qquad \qquad $\forall$ \texttt{i, send <forward,} $w_{ij}^{l+1} a_j^l$\texttt{, j, b> to i-th out-neuron} \\
 	. \qquad \qquad \qquad \texttt{miss\_send = size(send)} \\
@@ -170,5 +173,116 @@ We can describe the protocol with three labels. Two labels for receiving message
 	\caption{Protocol of communication in the case of feed-forward scenario}
 	\label{proto}
 \end{figure}
+
+This is how hidden-neuron work but we need to initiate the feed-forward scenario. For this the monitor sends the array containing all input values to the input neuron (in red in the \figurename~\ref{net}). This input neuron sends values of the array to all neurons in the true input layer (in green in the \figurename~\ref{net}) until it receive ack from everyone. Finally when output neuron has received all his input values he send it to the monitor. In feed-backward scenario, when the input neuron has received all errors of all neurons of the true input layer it sends a message saying that the backprop is done to the monitor.
+
+\paragraph{Results} With this protocol neurons won't wait if a message is lost. You can modify the \verb|err_prob| parameter in the \verb|src/network.erl| file to add a probability of failure when sending a message. Then you can test that everything works with \verb|make network|. To see all messages you can set \verb|verbose| to \verb|true|. You will see all messages during the process. You can also look at the impact of the \verb|dt| parameter which is the time before re-sending a message. I set it to 20ms but if we decrease this value the execution time reduces when the probability of failure is non-null. The \figurename~\ref{err_prob} shows the impact of the \verb|err_prob| parameter on execution time.
+
+\begin{figure}
+	\centering
+	\includegraphics[scale=0.6]{prob_error.png}
+	\captionsetup{justification=centering}
+	\caption{Evolution of execution time in function of the probability of error in the sending of messages}
+	\label{err_prob}
+\end{figure}
+
+\section{Interruptions and Shutdown}
+
+Again, interruption of feed-backward scenario is very similar to the interruption of feed-forward scenario so I will only present the interruption of feed-forward scenario. As the feed-forward scenario starts in the input neuron and ends in the output neuron if the interruption starts in the input neuron maybe the wave of interruption won't reach the wave of feed-forward before the scenario is finished. So we start the interruption in the output neuron.
+
+I first thought that I could only reinitialize the \verb|com| record to make neurons forget their previous messages. But by doing this certain neurons after being reset, could receive messages from neurons that had not been reinitialized yet and then they thought a new wave has begun. That's why I decided to use to passes as illustrated \figurename~\ref{inter}. The first pass interrupt neurons in the sense that when they are interrupted they ignore messages of feed-forward scenario and they stop send messages. When the input neuron receive the interruption message it start a new pass which reset the \verb|com| record of neurons. In this way, when neurons are reset they don't receive messages because other neurons are either interrupted either reset.
+
+To limit the number of messages, only the first neuron of each layer sends the interruption message to the next layer.
+
+\begin{figure}[h]
+	\centering
+	\begin{tikzpicture}[every node/.style={minimum size=0.75cm}, >={latex}, scale=0.9]
+	\node[fill=blue, draw, circle, opacity=0.5] (a) at (0, 0) {};
+	
+	\node[fill=green, draw, circle, opacity=0.5] (b) at (2.5, -1.4) {};
+	\node[fill=green, draw, circle, opacity=0.5] (c) at (2.5, 0) {};
+	\node at (2.5, 0) {$\bigotimes$};
+	\node[fill=green, draw, circle, opacity=0.5] (d) at (2.5, 1.4) {};
+	
+	\node[fill=gray, draw, circle, opacity=0.5] (e) at (5, -0.7) {};
+	\node at (5, -0.7) {$\bigotimes$};
+	\node[fill=gray, draw, circle, opacity=0.5] (f) at (5, 0.7) {};
+	\node at (5, 0.7) {$\bigotimes$};
+	
+	\node[fill=gray, draw, circle, opacity=0.5] (g) at (7.5, -0.7) {};
+	\node at (7.5, -0.7) {$\bigotimes$};
+	\node[fill=gray, draw, circle, opacity=0.5] (h) at (7.5, 0.7) {};
+	\node at (7.5, 0.7) {$\bigotimes$};
+	
+	\node[fill=red, draw, circle, opacity=0.5] (i) at (10, 0) {};
+	\node at (10, 0) {$\bigotimes$};
+	
+	\node[fill=black, draw, circle, opacity=0.5] (j) at (5, 2.8) {};
+	
+	\node at (-0.3, -1) {\small Input neuron};
+	\node at (10.3, -1) {\small Output neuron};
+	\node at (5, 3.55) {\small Monitor};
+	
+	\node[draw,rectangle] at (0.1, 3.4) {$\bigotimes$: interrupted};
+	
+	\draw[->, purple, thick] (j) edge[bend left] (i);
+	\draw[->, purple, thick] (i) -- (g);
+	\draw[->, purple, thick] (i) -- (h);
+	\draw[->, purple, thick] (h) -- (e);
+	\draw[->, purple, thick] (h) -- (f);
+	\draw[->, purple, thick, opacity=0.3] (f) -- (b);
+	\draw[->, purple, thick] (f) -- (c);
+	\draw[->, purple, thick, opacity=0.3] (f) -- (d);
+	\draw[->, purple, thick, opacity=0.3] (d) -- (a);
+	\end{tikzpicture}
+	\begin{tikzpicture}[every node/.style={minimum size=0.75cm}, >={latex}, scale=0.9]
+	\node[fill=blue, draw, circle, opacity=0.5] (a) at (0, 0) {};
+	\node at (0, 0) {$\bigcirc$};
+	
+	\node[fill=green, draw, circle, opacity=0.5] (b) at (2.5, -1.4) {};
+	\node at (2.5, -1.4) {$\bigcirc$};
+	\node[fill=green, draw, circle, opacity=0.5] (c) at (2.5, 0) {};
+	\node at (2.5, 0) {$\bigcirc$};
+	\node[fill=green, draw, circle, opacity=0.5] (d) at (2.5, 1.4) {};
+	\node at (2.5, 1.4) {$\bigcirc$};
+	
+	\node[fill=gray, draw, circle, opacity=0.5] (e) at (5, -0.7) {};
+	\node at (5, -0.7) {$\bigcirc$};
+	\node[fill=gray, draw, circle, opacity=0.5] (f) at (5, 0.7) {};
+	\node at (5, 0.7) {$\bigcirc$};
+	
+	\node[fill=gray, draw, circle, opacity=0.5] (g) at (7.5, -0.7) {};
+	\node at (7.5, -0.7) {$\bigotimes$};
+	\node[fill=gray, draw, circle, opacity=0.5] (h) at (7.5, 0.7) {};
+	\node at (7.5, 0.7) {$\bigotimes$};
+	
+	\node[fill=red, draw, circle, opacity=0.5] (i) at (10, 0) {};
+	\node at (10, 0) {$\bigotimes$};
+	
+	\node[fill=black, draw, circle, opacity=0.5] (j) at (5, 2.8) {};
+	
+	\node at (-0.3, -1) {\small Input neuron};
+	\node at (10.3, -1) {\small Output neuron};
+	\node at (5, 3.55) {\small Monitor};
+	
+	\node[draw,rectangle] at (0.1, 3.4) {$\bigcirc$: reinitialized};
+	
+	\draw[->, brown, thick] (a) -- (b);
+	\draw[->, brown, thick] (a) -- (c);
+	\draw[->, brown, thick] (a) -- (d);
+	\draw[->, brown, thick] (d) -- (e);
+	\draw[->, brown, thick] (d) -- (f);
+	\draw[->, brown, thick, opacity=0.3] (f) -- (g);
+	\draw[->, brown, thick, opacity=0.3] (f) -- (h);
+	\draw[->, brown, thick, opacity=0.3] (h) -- (i);
+	\end{tikzpicture}
+	\captionsetup{justification=centering}
+	\caption{Interruption of a feed-forward scenario.}
+	\label{inter}
+\end{figure}
+
+\section{Monitor}
+
+My monitor is very simple. I have nothing particular to say about it. I have only implemented what we were asked to implement from question a) to question f). I didn't implement a mechanism to detect neurons failure and a way to re-spawn neurons. The function \verb|test| in the file \verb|src/monitor.erl| is an example to learn to use the monitor. You can run this function with \verb|make monitor|.
 
 \end{document}

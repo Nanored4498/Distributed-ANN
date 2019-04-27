@@ -273,7 +273,7 @@ resend_backward(Data, Com, K) ->
 %%% Function to resend data if necessary. Time is the current time %%%
 time_com(Data, Com, Time, DT, Dir) -> Com#com{
 	timeout = 
-		if (Com#com.miss_send > 0), (Time - Com#com.timeout > DT) ->
+		if (Com#com.miss_send > 0), (Time - Com#com.timeout > DT), not Com#com.interrupted ->
 			array:map(fun(I, V) ->
 				if V == Com#com.bit ->
 					if Dir == forward -> resend_forward(Data, Com, I);
