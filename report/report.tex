@@ -45,6 +45,15 @@ To execute the code you can use:
 	\item \verb=make testing | python3 testing/stats.py= to plot some graphs about the efficiency of different neural network architectures.
 \end{itemize}
 
+\paragraph{Parameters}
+At the beginning of the file \verb|src/network.erl| there is a section parameters in which you can:
+\begin{itemize}
+	\item Choose the time before re-sending a message when no ack has been received.
+	\item Choose the learning rate.
+	\item Activate the verbose mode.
+	\item Choose the probability of failure when sending a message between two neurons.
+\end{itemize}
+
 \section{Network deployment}
 
 I spawn all neurons on the same node. I didn't implemented a way to spawn layers on different nodes. The function that spawn a network is \verb|network:neural_network/2|. the first parameter is a list of the sizes of each layer. The second is the PID of the monitor with which output and input neurons will communicate. I use a trick which consist in spawning a new input neurons before the true layer of inputs neurons. This new neurons will have a list of values to feed to the true input layer in feed-forward scenario.

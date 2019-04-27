@@ -9,11 +9,11 @@
 %%%%%%%%%%%%%%%%%%%%%% PARAMETERS %%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%%% Time before resending a message %%%%
+%%%% Time before resending a message in nanoseconds %%%%
 dt() -> 20000000. %%%% 20ms
 %%%% Learning rate %%%%
 learning_rate() -> 0.6.
-%%%% Verbose mode %%%%
+%%%% Verbose mode (print each message sent) %%%%
 verbose() -> false.
 %%%% Probability of failure when sending a message %%%%
 err_prob() -> 0.0.
