@@ -32,6 +32,7 @@ test() ->
 	M ! {test, T, self()},
 	receive X6 -> io:format("the mean quadratic error is: ~w~n", [element(3, X6)]) end,
 	io:format("======================================================~n"),
+	M ! shutdown,
 	ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%

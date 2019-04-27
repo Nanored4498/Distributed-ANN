@@ -49,6 +49,7 @@ test() ->
 	I ! {backward, interruption},
 	receive {backward, Y3} -> io:format("res = ~w~n", [Y3]) end, % Should be interruption as we sent an interruption
 	T1 = os:system_time(),
+	I ! shutdown,
 	io:format("Time: ~w µs~n", [(T1 - T0) div 1000]),
 	io:format("FINISH !!!!!~n"),
 	done.

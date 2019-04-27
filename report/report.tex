@@ -28,7 +28,7 @@
 
 \section{Introduction}
 
-In this project a neural network for distributed system has been implemented. We use an architecture with fully connected layers. Each neuron of the network is a single process which communicate with its in-neurons and out-neurons. The user can spawn a monitor which will create the network an manage it.
+In this project a neural network for distributed systems has been implemented. We use an architecture with fully connected layers. Each neuron of the network is a single process which communicate with its in-neurons and out-neurons. The user can spawn a monitor which will create the network an manage it.
 
 \paragraph{How to use the code}
 The source code is in the folder \verb|src|. There are two files which were given to us at the beginning of the project (\verb|dataframe.erl| and \verb|utils.erl|) to make easier the use of 2d arrays and to read CSV files.
@@ -40,7 +40,7 @@ The source code is in the folder \verb|src|. There are two files which were give
 The folder \verb|testing| contains some Python script to plot some graphics which are in this report. The folder \verb|data| contains two data-sets in CSV format. \\
 To execute the code you can use:
 \begin{itemize}
-	\item \verb|make network| to test feed-forward, feed-backward and interruption of these scenarios. More precisely it tests the interruption of a feed-forward scenario at the begging. Next it try to make the network output 1 on the input (0.5, 0.4). It print at each step two lines with \verb|res = done| for the feed-backward scenario and \verb|res = <a float>| for the result of the feed-forward scenario. At the end it tries to interrupt a feed-backward scenario.
+	\item \verb|make network| to test feed-forward, feed-backward and interruption of these scenarios. More precisely it tests the interruption of a feed-forward scenario at the begging. Next it try to make the network output 1 on the input (0.5, 0.4). It print at each step two lines with \verb|res = done| for the feed-backward scenario and \verb|res = <a float>| for the result of the feed-forward scenario. This result should increase. At the end it tries to interrupt a feed-backward scenario.
 	\item \verb|make monitor| to test the monitor which tests backpropagation algorithm on the data-set in the file \verb|training_set.csv|.
 	\item \verb=make testing | python3 testing/stats.py= to plot some graphs about the efficiency of different neural network architectures.
 \end{itemize}
@@ -117,7 +117,7 @@ I have three different functions for the neuron. A function for hidden neurons a
 \section{Feed-forward and feed-backward scenarios}
 
 \paragraph{Weights and Bias}
-As proposed weights and bias are initialized with random values $\sim \mathcal{N}(0, 1)$. I created a record \verb|hd| that contains data of hidden neurons (When I say hidden neuron, I include neurons of the input layer. I only distinguish the input neuron and the output neuron from other neurons). In this record I store the weights of connections toward the out-layer (i.e. the values $w_{ij}^{l+1}$ for the neuron $j$ of the layer $l$ if use the notations of the subject). I preferred store these weights instead of weights of the connections with in-layer $w_{jk}^l$ as proposed in the subject because it allow us to avoid the need to store the values of in-neuron to update weights during the feed-backward scenario. In fact we have:
+As proposed weights and bias are initialized with random values $\sim \mathcal{N}(0, 1)$. I created a record \verb|hd| that contains data of hidden neurons (When I say hidden neuron, I include neurons of the input layer. I only distinguish the input neuron and the output neuron from other neurons). In this record I store the weights of connections toward the out-layer (i.e. the values $w_{ij}^{l+1}$ for the neuron $j$ of the layer $l$ using the notations of the subject). I preferred store these weights instead of weights of the connections with in-layer $w_{jk}^l$ as proposed in the subject because it allow us to avoid the need to store the values of in-neuron to update weights during the feed-backward scenario. In fact we have:
 $$ w_{ij}^{l+1} \gets w_{ij}^{l+1} - \eta a_j^l \delta_i^{l+1} $$
 Then the $j$-th neuron of the $l$-th layer has to send weighted values during feed-forward scenario (i.e. it sends $w_{ij}^{l+1} a_j^l$ to the $i$-th neuron of the $(l+1)$-th layer).
 
@@ -174,7 +174,7 @@ We can describe the protocol with three labels. Two labels for receiving message
 	\label{proto}
 \end{figure}
 
-This is how hidden-neuron work but we need to initiate the feed-forward scenario. For this the monitor sends the array containing all input values to the input neuron (in red in the \figurename~\ref{net}). This input neuron sends values of the array to all neurons in the true input layer (in green in the \figurename~\ref{net}) until it receive ack from everyone. Finally when output neuron has received all his input values he send it to the monitor. In feed-backward scenario, when the input neuron has received all errors of all neurons of the true input layer it sends a message saying that the backprop is done to the monitor.
+This is how hidden-neurons work but we need to initiate the feed-forward scenario. For this the monitor sends the array containing all input values to the input neuron (in red in the \figurename~\ref{net}). This input neuron sends values of the array to all neurons in the true input layer (in green in the \figurename~\ref{net}) until it receive ack from everyone. Finally when output neuron has received all his input values, he computes his value and send it to the monitor. In feed-backward scenario, when the input neuron has received all errors of all neurons of the true input layer it sends a message saying that the backprop is done to the monitor.
 
 \paragraph{Results} With this protocol neurons won't wait if a message is lost. You can modify the \verb|err_prob| parameter in the \verb|src/network.erl| file to add a probability of failure when sending a message. Then you can test that everything works with \verb|make network|. To see all messages you can set \verb|verbose| to \verb|true|. You will see all messages during the process. You can also look at the impact of the \verb|dt| parameter which is the time before re-sending a message. I set it to 20ms but if we decrease this value the execution time reduces when the probability of failure is non-null. The \figurename~\ref{err_prob} shows the impact of the \verb|err_prob| parameter on execution time.
 
@@ -188,11 +188,15 @@ This is how hidden-neuron work but we need to initiate the feed-forward scenario
 
 \section{Interruptions and Shutdown}
 
+\paragraph{Interruption}
 Again, interruption of feed-backward scenario is very similar to the interruption of feed-forward scenario so I will only present the interruption of feed-forward scenario. As the feed-forward scenario starts in the input neuron and ends in the output neuron if the interruption starts in the input neuron maybe the wave of interruption won't reach the wave of feed-forward before the scenario is finished. So we start the interruption in the output neuron.
 
-I first thought that I could only reinitialize the \verb|com| record to make neurons forget their previous messages. But by doing this certain neurons after being reset, could receive messages from neurons that had not been reinitialized yet and then they thought a new wave has begun. That's why I decided to use to passes as illustrated \figurename~\ref{inter}. The first pass interrupt neurons in the sense that when they are interrupted they ignore messages of feed-forward scenario and they stop send messages. When the input neuron receive the interruption message it start a new pass which reset the \verb|com| record of neurons. In this way, when neurons are reset they don't receive messages because other neurons are either interrupted either reset.
+I first thought that I could only reinitialize the \verb|com| record to make neurons forget their previous messages. But by doing this certain neurons after being reset, could receive messages from neurons that had not been reinitialized yet and then they thought a new wave has begun. That's why I decided to use two passes as illustrated in \figurename~\ref{inter}. The first pass interrupt neurons in the sense that when they are interrupted they ignore messages of feed-forward scenario and they stop send messages. When the input neuron receive the interruption message it start a new pass which reset the \verb|com| record of neurons. In this way, when neurons are reset they don't receive messages because other neurons are either interrupted or reset.
 
 To limit the number of messages, only the first neuron of each layer sends the interruption message to the next layer.
+
+\paragraph{Shutdown}
+You can also send a message \verb|shutdown| to the monitor that will send it to the input neuron and then the input neuron send it to the next layer and the first neuron of each layer transmit the message to its out-neurons. After receiving a message \verb|shutdown|, a process finish. Like this you can properly stop all processes.
 
 \begin{figure}[h]
 	\centering
@@ -284,5 +288,30 @@ To limit the number of messages, only the first neuron of each layer sends the i
 \section{Monitor}
 
 My monitor is very simple. I have nothing particular to say about it. I have only implemented what we were asked to implement from question a) to question f). I didn't implement a mechanism to detect neurons failure and a way to re-spawn neurons. The function \verb|test| in the file \verb|src/monitor.erl| is an example to learn to use the monitor. You can run this function with \verb|make monitor|.
+
+\section{Testing}
+
+\begin{figure}
+	\centering
+	\includegraphics[scale=0.5]{error.png}
+	\includegraphics[scale=0.5]{error_zoom.png}
+	\captionsetup{justification=centering}
+	\caption{Evolution of quadratic error for different network architectures}
+	\label{err}
+\end{figure}
+
+I tried different architectures in the file \verb|src/testing.erl|. You can run this script with \verb|make testing| and it will print some stats that can be plot thanks to the Python3 script \verb|testing/stats.py|. I experimented the influence of the network size on the evolution of the error on the test set (as proposed I separated the set in a train set and a test set with proportion 70/30\%). I obtained the graphic in the \figurename~\ref{err}. The tuples in the legend give the number of neurons in each layer. I measured also the time of execution and I obtained the graphic in the \figurename~\ref{time}. The orange dots in this graphics have a height proportional to the numbers of parameters to learn in the network architecture. As we can see the number of parameters seems to be correlated with the execution time.
+
+\begin{figure}
+	\includegraphics[scale=0.45]{time.png}
+	\caption{Time of execution for different architectures}
+	\label{time}
+\end{figure}
+
+\section{Discussion}
+
+I don't think that it is a good idea to distribute a neural network in this way. In fact computations made by each neurons are very simple. Then what is most time-consuming is communication and not computations in what I have done. We need to make processes make more computations before sending messages. In this way, the communication won't be a time-consuming problem. 
+
+Then another way to distribute a neural network is to spawn different processes where each process has a copy of the whole network. Then we can split the training set and give a subset to each process that will perform back-propagation on the training subset. When each process has finish they can send their new parameters to a server that will combined results of all processes to create new optimized parameters and send it to all processes. Then we restart, we split the training set, ... 
 
 \end{document}
