@@ -57,6 +57,7 @@ test() ->
 %%%%%%%%%%%%%%% SEND FUNCTION %%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+% Send a message Msg to To
 send(To, Msg) ->
 	Err_Prob = err_prob(),
 	R = rand:uniform(),
@@ -74,7 +75,7 @@ send(To, Msg) ->
 %%%%%%%%%%%%%%% HIDDEN neuron %%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% Data structure for neurons
+%%% Data structure for neurons %%%
 -record(com, {
 	rcv,				% An array which store a bit for all neuron from which we will receive messages
 	send,				% An array which store a bit for all neuron to which we will send messages
@@ -94,7 +95,11 @@ send(To, Msg) ->
 	d=0,			% error of the neuron
 	input_layer		% true iff the neuron is in the input layer
 }).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+%%% Initialization of the J-th neurone of a layer with out-layer Out.	%%%
+%%% If the neuron is in the input layer then Input_Layer is true.		%%%
+%%% Wait a message containing the in-layer								%%%
 hidden_neuron_init(Out, J, Input_Layer) ->
 	Size_Out = array:size(Out),
 	receive In ->
@@ -108,7 +113,9 @@ hidden_neuron_init(Out, J, Input_Layer) ->
 		Back = #com{rcv=Aout, send=Ain, miss_rcv=Size_Out},
 		hidden_neuron(Data, For, Back)
 	end.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+%%% Function to call when receiving a ack from I %%%
 rcv_ack(Com, I) ->
 	Send_I = array:get(I, Com#com.send),
 	if Send_I == Com#com.bit ->
@@ -116,7 +123,6 @@ rcv_ack(Com, I) ->
 		Missing2 = Com#com.miss_send - 1,
 		Send2 = array:set(I, New_bit, Com#com.send),
 		Size = array:size(Com#com.rcv),
-		%io:format("[~w] ack (~w)~n", [self(), Missing2]),
 		if Missing2 == 0 ->
 			Com#com{
 				send = Send2,
@@ -133,14 +139,19 @@ rcv_ack(Com, I) ->
 	true ->
 		Com
 	end.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-add_forward(Data, _K, WA_K, First, Last, Bit) ->
+%%% Function to update Data when receiving the weighted value	%%%
+%%% in-neuron K. First it true if it is the first value that we	%%%
+%%% receive in this feed-forward scenario. Last is true if it	%%%
+%%% is the last value that we need to receive. Bit is the one	%%%
+%%% of the communication.										%%%
+add_forward(Data, WA_K, First, Last, Bit) ->
 	A2 = if First -> WA_K;
 		true -> Data#hd.a + WA_K end,
 	if Last ->
 		A3 = utils:sigmoid(A2 + Data#hd.b),
 		array:map(fun(I, N) ->
-			%io:format("[~w] Node ~w ~w~n", [self(), I, Data#hd.w]),
 			WI = array:get(I, Data#hd.w),
 			send(N, {forward, WI*A3, Data#hd.j, Bit})
 			end, Data#hd.out),
@@ -148,7 +159,10 @@ add_forward(Data, _K, WA_K, First, Last, Bit) ->
 	true ->
 		Data#hd{a=A2}
 	end.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+%%% Almost the same as the previous function expect that it is for	%%%
+%%% feed-backward scenarion.										%%%
 add_backward(Data, I, D_I, First, Last, Bit) ->
 	W_I = array:get(I, Data#hd.w),
 	D2 = if First -> W_I * D_I;
@@ -166,7 +180,11 @@ add_backward(Data, I, D_I, First, Last, Bit) ->
 	true ->
 		Data#hd{d=D2, w=W2}
 	end.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+%%% Function called when receiving a value Val from the neuron I. It returns the couple	%%%
+%%% (Data, Com) updated. Dir is forward if it is a message receive for the feed-forward	%%%
+%%% scenario. Bit_rcv is the bit of the communication.									%%%
 rcv_value(Data, Com, I, Val, Dir, Bit_rcv) ->
 	if Com#com.interrupted ->
 		{Data, Com};
@@ -191,11 +209,10 @@ rcv_value(Data, Com, I, Val, Dir, Bit_rcv) ->
 			Missing2 = Com#com.miss_rcv - 1,
 			First = Com#com.miss_rcv == Size_Rcv,
 			Last = Missing2 == 0,
-			Data2 = if Dir == forward -> add_forward(Data, I, Val, First, Last, Bit);
+			Data2 = if Dir == forward -> add_forward(Data, Val, First, Last, Bit);
 					true -> add_backward(Data, I, Val, First, Last, Bit) end,
 			%%% Executed when all inputs have been received %%%
 			if Last ->
-				%io:format("[~w] miss_send ~w~n", [self(), array:size(Com#com.send)]),
 				{Data2, Com#com{
 					rcv = Rcv2,
 					miss_rcv = Missing2,
@@ -213,9 +230,11 @@ rcv_value(Data, Com, I, Val, Dir, Bit_rcv) ->
 			{Data, Com}
 		end
 	end.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+%%% Function called when receiving an interuption for feed-Dir scenario. The pass is 1 or 2	%%%
 interrupt(Data, Com, Dir, Pass) ->
-	if Data#hd.j == 0 ->
+	if Data#hd.j == 0 ->		% The first neuron of the layer propagate the interruption
 		if Dir == forward ->
 			array:map(fun(_K, N) -> send(N, {forward, interruption, Pass}) end,
 				if Pass == 1 -> Data#hd.in; true -> Data#hd.out end);
@@ -226,9 +245,9 @@ interrupt(Data, Com, Dir, Pass) ->
 	true ->
 		ok
 	end,
-	if Pass == 1 ->
+	if Pass == 1 ->				% During the first pass only update the interrupted value to true
 		Com#com{interrupted=true};
-	true ->
+	true ->						% During the second pass reinitialize the record Com
 		Size_Rcv = array:size(Com#com.rcv),
 		Size_Send = array:size(Com#com.send),
 		Com#com{
@@ -240,14 +259,18 @@ interrupt(Data, Com, Dir, Pass) ->
 			interrupted=false
 		}
 	end.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+%%% Functions to resend datas %%%
 resend_forward(Data, Com, I) ->
 	WA = array:get(I, Data#hd.w) * Data#hd.a,
 	send(array:get(I, Data#hd.out), {forward, WA, Data#hd.j, Com#com.bit}).
 
 resend_backward(Data, Com, K) ->
 	send(array:get(K, Data#hd.in), {backward, Data#hd.d, Data#hd.j, Com#com.bit}).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+%%% Function to resend data if necessary. Time is the current time %%%
 time_com(Data, Com, Time, DT, Dir) -> Com#com{
 	timeout = 
 		if (Com#com.miss_send > 0), (Time - Com#com.timeout > DT) ->
@@ -264,6 +287,7 @@ time_com(Data, Com, Time, DT, Dir) -> Com#com{
 			Com#com.timeout
 		end
 	}.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 hidden_neuron(Data, For0, Back0) ->
 	Bit_for = For0#com.bit,
@@ -271,7 +295,6 @@ hidden_neuron(Data, For0, Back0) ->
 	DT = dt(),
 	Time = os:system_time(),
 
-	%io:format("[~w] ~w - ~w~n", [self(), Time, For0#com.timeout]),
 	For = time_com(Data, For0, Time, DT, forward),
 	Back = time_com(Data, Back0, Time, DT, backward),
 
@@ -279,14 +302,12 @@ hidden_neuron(Data, For0, Back0) ->
 
 		%%%%%%%% ACK FORWARD %%%%%%%%
 		{forward, ack, I, Bit_for} ->
-			%io:format("[~w] miss_send3 ~w~n", [self(), For#com.miss_send]),
 			For2 = rcv_ack(For, I),
 			hidden_neuron(Data, For2, Back);
 
 		%%%%%%%% VALUE FORWARD %%%%%%%%
 		{forward, WA_K, K, Bit_rcv} when WA_K /= ack ->
 			{Data2, For2} = rcv_value(Data, For, K, WA_K, forward, Bit_rcv),
-			%io:format("[~w] miss_send2 ~w~n", [self(), For2#com.miss_send]),
 			hidden_neuron(Data2, For2, Back);
 
 		%%%%%%%% INTERUPT FORWARD %%%%%%%%
@@ -538,7 +559,6 @@ output_neuron(Data0) ->
 				New_bit = (Bit_for + 1) rem 2,
 				Miss2 = Data#on.miss_for - 1,
 				Ack2 = array:set(K, New_bit, Data#on.ack_for),
-				%io:format("[~w] monitor ~w~n", [self(), Miss2]),
 				if Miss2 == 0 ->
 					A3 = utils:sigmoid(A2),
 					Data#on.monitor ! {forward, A3},

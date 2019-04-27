@@ -113,7 +113,7 @@ Layers are spawn one after the other starting from the layer of the output neuro
 
 I have three different functions for the neuron. A function for hidden neurons and for the neurons of the true input layer, a function for the input neuron and a function for the output neuron.
 
-\section{Feed-forward scenario}
+\section{Feed-forward and feed-backward scenarios}
 
 \paragraph{Weights and Bias}
 As proposed weights and bias are initialized with random values $\sim \mathcal{N}(0, 1)$. I created a record \verb|hd| that contains data of hidden neurons (When I say hidden neuron, I include neurons of the input layer. I only distinguish the input neuron and the output neuron from other neurons). In this record I store the weights of connections toward the out-layer (i.e. the values $w_{ij}^{l+1}$ for the neuron $j$ of the layer $l$ if use the notations of the subject). I preferred store these weights instead of weights of the connections with in-layer $w_{jk}^l$ as proposed in the subject because it allow us to avoid the need to store the values of in-neuron to update weights during the feed-backward scenario. In fact we have:
@@ -126,5 +126,49 @@ Furthermore the output neuron stores its own bias.
 
 \paragraph{Communications}
 I created another record \verb|com| for communications. The three parameters of the hidden neuron function are a record \verb|hd| containing the data of the neuron, and two record \verb|com|, one for the communication of the feed-forward scenario and another for the communication of the feed-backward scenario.
+
+Now I will explain how communications works in the case of feed-forward scenario. I use the idea of the alternative-bit algorithm. In the \verb|com| record I have the following values:
+\begin{itemize}
+	\item \verb|rcv|, an array which store a bit for all neuron from which we will receive messages (i.e. neurons of the in-layer in the case of feed-forward scenario).
+	\item \verb|send|, an array which store a bit for all neuron to which we will send messages (i.e. neurons of the out-layer in the case of feed-forward scenario).
+	\item \verb|miss_rcv|, the number of messages that we need to receive.
+	\item \verb|miss_send|, the number of ack that we need to receive.
+	\item \verb|timeout|, the time in nano-seconds of the last message sent.
+	\item \verb|bit|, the alternative-bit that represent the state of the communication.
+\end{itemize}
+The two arrays \verb|rcv| and \verb|send| are initialized with zeros. \verb|bit| is also initialized to zero. Finally the first state of a neuron is waiting for data so \verb|miss_rcv| is initialized to the length of \verb|rcv| (\verb|size(rcv)|) and \verb|miss_send| is initialized to zero.
+
+We can describe the protocol with three labels. Two labels for receiving messages and one label for re-sending messages for which the ack has not been received (\figurename~\ref{proto}).
+
+\begin{figure}[t]
+	\fbox{\parbox{\linewidth}{
+	\texttt{RCV\_ACK: [receive <forward, ack, i, b>]} \\
+	. \qquad \texttt{if b == bit and send[i] == bit:} \\
+	. \qquad \qquad \texttt{miss\_send = miss\_send - 1} \\
+	. \qquad \qquad \texttt{send[i] = (bit + 1) mod 2} \\
+	. \qquad \qquad \texttt{if miss\_send == 0:} \\
+	. \qquad \qquad \qquad \texttt{bit = (bit + 1) mod 2} \\
+	. \qquad \qquad \qquad \texttt{miss\_rcv = size(rcv)} \\
+	\\
+	\texttt{RCV\_VAL: [receive <forward,} $w_{jk}^l a_k^{l-1}$\texttt{, k, b>]} \\
+	. \qquad \texttt{if b == bit or miss\_send == 0:} \\
+	. \qquad \qquad \texttt{send <forward, ack, j, b> to k-th in-neuron} \\
+	. \qquad \texttt{if b == bit and rcv[k] == bit:} \\
+	. \qquad \qquad \texttt{miss\_rcv = miss\_rcv - 1} \\
+	. \qquad \qquad \texttt{rcv[k] = (bit + 1) mod 2} \\
+	. \qquad \qquad \texttt{update } $a_j^l$ \texttt{thanks to} $w_{jk}^l a_k^{l-1}$ \\
+	. \qquad \qquad \texttt{if miss\_rcv == 0:} \\
+	. \qquad \qquad \qquad $\forall$ \texttt{i, send <forward,} $w_{ij}^{l+1} a_j^l$\texttt{, j, b> to i-th out-neuron} \\
+	. \qquad \qquad \qquad \texttt{miss\_send = size(send)} \\
+	. \qquad \qquad \qquad \texttt{timeout = get\_Time()} \\
+	\\
+	\texttt{RE-SEND: [miss\_send > 0 and get\_Time() - timeout > DT]} \\
+	. \qquad $\forall$ \texttt{i, if send[i] == bit:} \\
+	. \qquad \qquad \texttt{send <forward,} $w_{ij}^{l+1} a_j^l$\texttt{, j, b> to i-th out-neuron} \\
+	. \qquad \texttt{timeout = get\_Time()} \\
+	}}
+	\caption{Protocol of communication in the case of feed-forward scenario}
+	\label{proto}
+\end{figure}
 
 \end{document}
